@@ -1,0 +1,330 @@
+/* 体彩推荐分析系统 — 样式 */
+
+:root {
+    --ball-red: #e63946;
+    --ball-blue: #2a6fdb;
+    --ball-dark: #343a40;
+    --bg-primary: #f5f6fa;
+    --bg-card: #fff;
+    --bg-reason: #f8f9fa;
+    --bg-reco-mini: #fff5f5;
+    --text-primary: #212529;
+    --text-secondary: #6c757d;
+    --border-color: #e9ecef;
+}
+
+/* ---------- 深色模式 ---------- */
+[data-theme="dark"] {
+    --bg-primary: #1a1a2e;
+    --bg-card: #16213e;
+    --bg-reason: #1a1a2e;
+    --bg-reco-mini: #1a1a2e;
+    --text-primary: #e0e0e0;
+    --text-secondary: #adb5bd;
+    --border-color: #2a2a4a;
+}
+
+[data-theme="dark"] body {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .card {
+    background: var(--bg-card);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .card-header {
+    border-color: var(--border-color);
+}
+
+[data-theme="dark"] .table {
+    color: var(--text-primary);
+    --bs-table-bg: var(--bg-card);
+    --bs-table-hover-bg: #1e2d4a;
+    --bs-table-striped-bg: #182640;
+}
+
+[data-theme="dark"] .table-light {
+    --bs-table-bg: #1a2744;
+    --bs-table-color: var(--text-primary);
+    --bs-table-border-color: var(--border-color);
+}
+
+[data-theme="dark"] .form-control,
+[data-theme="dark"] .form-select {
+    background: var(--bg-card);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .reco-card {
+    background: var(--bg-card);
+    border-color: var(--border-color);
+}
+
+[data-theme="dark"] .reco-reason p {
+    background: var(--bg-reason);
+    color: var(--text-secondary);
+}
+
+[data-theme="dark"] .reco-mini {
+    background: var(--bg-reco-mini);
+}
+
+[data-theme="dark"] .badge.bg-light {
+    background: var(--bg-reason) !important;
+    color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .alert-warning {
+    background: #3d2e00;
+    border-color: #5a4200;
+    color: #ffc107;
+}
+
+[data-theme="dark"] .bg-light {
+    background: var(--bg-reason) !important;
+}
+
+[data-theme="dark"] .text-muted {
+    color: var(--text-secondary) !important;
+}
+
+[data-theme="dark"] .btn-outline-secondary {
+    color: var(--text-secondary);
+    border-color: var(--border-color);
+}
+
+[data-theme="dark"] .btn-outline-success,
+[data-theme="dark"] .btn-outline-primary {
+    color: #6dd08c;
+    border-color: #6dd08c;
+}
+
+[data-theme="dark"] footer {
+    background: #0f0f1e !important;
+}
+
+body {
+    background: var(--bg-primary);
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+/* ---------- 号码球 ---------- */
+.balls-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.lotto-ball {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    color: #fff;
+    font-weight: 700;
+    font-size: 16px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    flex-shrink: 0;
+    transition: transform 0.15s ease;
+}
+
+.lotto-ball:hover {
+    transform: scale(1.15);
+}
+
+.ball-red { background: var(--ball-red); }
+.ball-blue { background: var(--ball-blue); }
+.ball-digit {
+    background: var(--ball-dark);
+    width: 34px;
+    height: 34px;
+    font-size: 18px;
+    border-radius: 50%;
+}
+
+.ball-sep {
+    color: #999;
+    font-weight: 700;
+    margin: 0 2px;
+}
+
+/* ---------- 卡片 ---------- */
+.game-card {
+    border: none;
+    border-top: 4px solid var(--ball-red);
+    border-radius: 12px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.game-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
+}
+
+.reco-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-left: 4px solid var(--ball-red);
+    border-radius: 10px;
+    padding: 14px;
+    animation: fadeSlideIn 0.3s ease both;
+}
+
+@keyframes fadeSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 5组单选卡片依次延迟出现 */
+.reco-card:nth-child(1) { animation-delay: 0s; }
+.reco-card:nth-child(2) { animation-delay: 0.05s; }
+.reco-card:nth-child(3) { animation-delay: 0.1s; }
+.reco-card:nth-child(4) { animation-delay: 0.15s; }
+.reco-card:nth-child(5) { animation-delay: 0.2s; }
+.reco-card:nth-child(6) { animation-delay: 0.25s; }
+
+/* 纯随机参考组：虚线边框 + 中性色，视觉上与"特征工程"组区分 */
+.reco-card-random {
+    border-left: 4px dashed #6c757d !important;
+    background: repeating-linear-gradient(
+        45deg, transparent, transparent 8px,
+        rgba(108, 117, 125, 0.05) 8px, rgba(108, 117, 125, 0.05) 16px);
+}
+.reco-card-random .reco-label { color: #6c757d; }
+
+.reco-label {
+    font-weight: 700;
+    color: var(--ball-red);
+    margin-bottom: 4px;
+}
+
+.reco-reason summary { cursor: pointer; }
+.reco-reason p {
+    color: #555;
+    line-height: 1.6;
+    background: var(--bg-reason);
+    padding: 8px 10px;
+    border-radius: 6px;
+}
+
+.reco-mini { background: var(--bg-reco-mini); padding: 8px; border-radius: 8px; }
+
+/* digit 复式网格 */
+.digit-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 20px;
+}
+.digit-grid > div { display: flex; align-items: center; gap: 4px; }
+
+/* ---------- 登录页 ---------- */
+.login-bg {
+    background: linear-gradient(135deg, #e63946 0%, #2a6fdb 100%);
+}
+
+/* ---------- 表格 ---------- */
+.table > :not(caption) > * > * { vertical-align: middle; }
+
+/* 刷新按钮动效 */
+#refreshBtn { transition: opacity 0.2s; }
+#refreshBtn:disabled { opacity: 0.6; cursor: wait; }
+
+.spinner-inline {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #fff;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- 深色模式切换按钮 ---------- */
+.theme-toggle {
+    cursor: pointer;
+    border: none;
+    background: rgba(255,255,255,0.15);
+    color: #fff;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    transition: background 0.2s;
+}
+.theme-toggle:hover {
+    background: rgba(255,255,255,0.25);
+}
+
+/* ---------- 移动端适配 ---------- */
+@media (max-width: 768px) {
+    .lotto-ball {
+        width: 32px;
+        height: 32px;
+        font-size: 14px;
+    }
+    .ball-digit {
+        width: 28px;
+        height: 28px;
+        font-size: 15px;
+    }
+    .balls-row {
+        gap: 4px;
+    }
+    .reco-card {
+        padding: 10px;
+    }
+    .card-header {
+        font-size: 0.95rem;
+    }
+    /* 详情页按钮组换行 */
+    .btn-group {
+        flex-wrap: wrap;
+    }
+    .btn-group .btn {
+        font-size: 0.8rem;
+        padding: 0.2rem 0.5rem;
+    }
+    /* 图表高度缩小 */
+    canvas {
+        max-height: 200px !important;
+    }
+    /* 表格字号缩小 */
+    .table-sm th, .table-sm td {
+        padding: 0.3rem 0.4rem;
+        font-size: 0.85rem;
+    }
+}
+
+@media (max-width: 576px) {
+    .lotto-ball {
+        width: 28px;
+        height: 28px;
+        font-size: 12px;
+    }
+    .ball-digit {
+        width: 24px;
+        height: 24px;
+        font-size: 13px;
+    }
+    main.container {
+        padding-left: 8px;
+        padding-right: 8px;
+    }
+}

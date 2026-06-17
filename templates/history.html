@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}历史数据 — 体彩推荐分析系统{% endblock %}
+
+{% macro ball(n, cls='ball-red') %}
+<span class="lotto-ball {{ cls }}">{{ '%02d' % n if n < 10 and cls != 'ball-digit' else n }}</span>
+{% endmacro %}
+
+{% block content %}
+<h2 class="mb-3">📋 历史开奖数据</h2>
+
+<form class="row g-2 mb-3 align-items-end">
+    <div class="col-auto">
+        <label class="form-label small mb-0">玩法</label>
+        <select name="game" class="form-select" onchange="this.form.submit()">
+            {% for code, info in games.items() %}
+            <option value="{{ code }}" {% if code==game %}selected{% endif %}>{{ info.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <label class="form-label small mb-0">搜索期号/日期</label>
+        <input type="text" name="q" value="{{ q }}" class="form-control" placeholder="如 26155 或 2026-06">
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-primary">查询</button>
+    </div>
+    <div class="col-auto">
+        <a class="btn btn-outline-success btn-sm" href="{{ url_for('api_export_draws', game=game) }}">📥 导出CSV</a>
+    </div>
+</form>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <table class="table table-hover table-sm mb-0 align-middle">
+            <thead class="table-light">
+                <tr><th>期号</th><th>开奖日期</th><th>开奖号码</th>
+                    {% if games[game].type == 'digit' %}<th>和值</th>{% endif %}
+                </tr>
+            </thead>
+            <tbody>
+            {% for r in rows %}
+            <tr>
+                <td><strong>{{ r.issue }}</strong></td>
+                <td class="small">{{ r.draw_date[:10] if r.draw_date else '—' }}</td>
+                <td>
+                    <span class="balls-row">
+                    {% if games[game].type == 'lotto' %}
+                        {% for n in r.front %}{{ ball(n, 'ball-red') }}{% endfor %}
+                        <span class="ball-sep">+</span>
+                        {% for n in r.back %}{{ ball(n, 'ball-blue') }}{% endfor %}
+                    {% else %}
+                        {% for n in r.front %}{{ ball(n, 'ball-digit') }}{% endfor %}
+                    {% endif %}
+                    </span>
+                </td>
+                {% if games[game].type == 'digit' %}<td>{{ r.front | sum }}</td>{% endif %}
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="text-center text-muted py-4">无数据</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+<p class="text-muted small mt-2">显示最近 {{ rows|length }} 条（最多 200 条）。数据来源：500彩票网。</p>
+{% endblock %}

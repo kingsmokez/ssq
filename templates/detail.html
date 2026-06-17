@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% block title %}{{ games[game].name }} — 详情{% endblock %}
+
+{% macro ball(n, cls='ball-red') %}
+<span class="lotto-ball {{ cls }}">{{ '%02d' % n if n < 10 and cls != 'ball-digit' else n }}</span>
+{% endmacro %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h2 class="mb-0">{{ games[game].name }}
+            <small class="text-muted fs-6">详情分析</small>
+        </h2>
+        <p class="text-muted mb-0">
+            最新 {{ gs.latest_issue }} · {{ gs.latest_date }} ·
+            窗口 {{ gs.window_draws }} 期 / 共 {{ gs.total_draws }} 期
+        </p>
+    </div>
+    <div class="btn-group">
+        <a class="btn btn-outline-secondary btn-sm {% if days==30 %}active{% endif %}" href="?days=30">30天</a>
+        <a class="btn btn-outline-secondary btn-sm {% if days==90 %}active{% endif %}" href="?days=90">90天</a>
+        <a class="btn btn-outline-secondary btn-sm {% if days==730 %}active{% endif %}" href="?days=730">2年</a>
+        <a class="btn btn-outline-success btn-sm" href="{{ url_for('api_export_draws', game=game) }}">📥 导出开奖CSV</a>
+        <a class="btn btn-outline-primary btn-sm" href="{{ url_for('api_export_recommendations', game=game) }}">📥 导出推荐CSV</a>
+    </div>
+</div>
+
+<!-- 推荐区 -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-danger text-white">
+        <strong>🎯 今日推荐</strong>
+        <span class="small">（综合频率/遗漏/趋势打分）</span>
+    </div>
+    <div class="card-body">
+        <ul class="nav nav-pills mb-3" role="tablist">
+            <li class="nav-item"><button class="nav-link active" data-bs-toggle="pill" data-bs-target="#tab-single">单选 6 组</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-small">小复式</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-medium">中复式</button></li>
+        </ul>
+
+        <div class="tab-content">
+            <!-- 单选 -->
+            <div class="tab-pane fade show active" id="tab-single">
+                {% if single %}
+                <div class="row">
+                {% for grp in single %}
+                <div class="col-lg mb-3">
+                    <div class="reco-card h-100 {% if '随机' in grp.label %}reco-card-random{% endif %}">
+                        <div class="reco-label">{{ grp.index }} · {{ grp.label }}</div>
+                        <div class="balls-row my-2">
+                            {% if 'front' in grp.picks %}
+                                {% for n in grp.picks.front %}{{ ball(n, 'ball-red') }}{% endfor %}
+                                <span class="ball-sep">+</span>
+                                {% for n in grp.picks.back %}{{ ball(n, 'ball-blue') }}{% endfor %}
+                            {% else %}
+                                {% for n in grp.picks.digits %}{{ ball(n, 'ball-digit') }}{% endfor %}
+                            {% endif %}
+                        </div>
+                        <span class="badge bg-light text-dark border">¥{{ grp.cost | default(2) }}</span>
+                        <details class="reco-reason">
+                            <summary class="small text-muted">为什么推荐？</summary>
+                            <p class="small mb-0 mt-1">{{ grp.reason }}</p>
+                        </details>
+                    </div>
+                </div>
+                {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-muted">暂无推荐，请到总览页点击"刷新数据并计算推荐"。</div>
+                {% endif %}
+            </div>
+
+            <!-- 小复式 -->
+            <div class="tab-pane fade" id="tab-small">
+                {% if small %}
+                    {% set c = small[0] %}
+                    <div class="reco-card">
+                        <div class="d-flex justify-content-between">
+                            <div class="reco-label">小复式 · {{ c.bets }} 注</div>
+                            <span class="badge bg-warning text-dark">{{ c.bets }} 注 · ¥{{ c.cost | default(c.bets * 2) }}</span>
+                        </div>
+                        {% if 'front' in c.picks %}
+                        <div class="balls-row my-2">
+                            {% for n in c.picks.front %}{{ ball(n, 'ball-red') }}{% endfor %}
+                            <span class="ball-sep">+</span>
+                            {% for n in c.picks.back %}{{ ball(n, 'ball-blue') }}{% endfor %}
+                        </div>
+                        {% else %}
+                        <div class="digit-grid my-2">
+                            {% for cands in c.picks.digits_grid %}
+                            <div><span class="text-muted small">第{{ loop.index }}位</span>
+                                {% for n in cands %}{{ ball(n, 'ball-digit') }}{% endfor %}
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        <p class="small text-muted mb-0 mt-2">{{ c.reason }}</p>
+                    </div>
+                {% else %}<div class="text-muted">暂无。</div>{% endif %}
+            </div>
+
+            <!-- 中复式 -->
+            <div class="tab-pane fade" id="tab-medium">
+                {% if medium %}
+                    {% set c = medium[0] %}
+                    <div class="reco-card">
+                        <div class="d-flex justify-content-between">
+                            <div class="reco-label">中复式 · {{ c.bets }} 注</div>
+                            <span class="badge bg-warning text-dark">{{ c.bets }} 注 · ¥{{ c.cost | default(c.bets * 2) }}</span>
+                        </div>
+                        {% if 'front' in c.picks %}
+                        <div class="balls-row my-2">
+                            {% for n in c.picks.front %}{{ ball(n, 'ball-red') }}{% endfor %}
+                            <span class="ball-sep">+</span>
+                            {% for n in c.picks.back %}{{ ball(n, 'ball-blue') }}{% endfor %}
+                        </div>
+                        {% else %}
+                        <div class="digit-grid my-2">
+                            {% for cands in c.picks.digits_grid %}
+                            <div><span class="text-muted small">第{{ loop.index }}位</span>
+                                {% for n in cands %}{{ ball(n, 'ball-digit') }}{% endfor %}
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        <p class="small text-muted mb-0 mt-2">{{ c.reason }}</p>
+                    </div>
+                {% else %}<div class="text-muted">暂无。</div>{% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 概率提示 + 预算计算器 -->
+<div class="row mb-4">
+    <div class="col-lg-6 mb-3">
+        <div class="card shadow-sm h-100 border-warning">
+            <div class="card-header bg-warning text-dark">
+                <strong>📊 概率真相</strong>
+                <span class="small">（诚实呈现，避免归因偏差）</span>
+            </div>
+            <div class="card-body" id="probHintBody">
+                <div class="text-muted small">加载中...</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6 mb-3">
+        <div class="card shadow-sm h-100 border-info">
+            <div class="card-header bg-info text-white">
+                <strong>💰 预算 × 覆盖率计算器</strong>
+            </div>
+            <div class="card-body">
+                <div class="d-flex align-items-center gap-2 mb-3">
+                    <label class="form-label mb-0 small text-nowrap">预算</label>
+                    <div class="input-group input-group-sm" style="max-width:180px;">
+                        <span class="input-group-text">¥</span>
+                        <input type="number" id="budgetInput" class="form-control" value="20" min="2" max="100000">
+                        <button class="btn btn-outline-info" id="budgetCalcBtn">计算</button>
+                    </div>
+                </div>
+                <div id="evResult">
+                    <div class="text-muted small">输入预算后点击「计算」，查看最划算的复式档位。</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 图表区 -->
+<div class="row">
+    <div class="col-lg-7 mb-3">
+        <div class="card shadow-sm h-100">
+            <div class="card-header">📈 号码出现频率</div>
+            <div class="card-body"><canvas id="freqChart" height="140"></canvas></div>
+        </div>
+    </div>
+    <div class="col-lg-5 mb-3">
+        <div class="card shadow-sam h-100">
+            <div class="card-header">🔥 当前遗漏值</div>
+            <div class="card-body"><canvas id="omitChart" height="140"></canvas></div>
+        </div>
+    </div>
+</div>
+
+{% if games[game].type == 'lotto' %}
+<!-- 共生热力图 -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header">🗺️ 号码共生率热力图（前区）</div>
+    <div class="card-body" style="overflow-x:auto;">
+        <canvas id="cooccurChart" height="260"></canvas>
+        <p class="small text-muted mt-2 mb-0">颜色越深表示两个号码在历史中同时出现的频率越高。可帮助识别"经常一起开出"的号码组合。</p>
+    </div>
+</div>
+{% endif %}
+
+<!-- 遗漏趋势 -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header">📉 遗漏趋势（前10个号码近50期变化）</div>
+    <div class="card-body"><canvas id="omitTrendChart" height="180"></canvas></div>
+</div>
+
+{% if games[game].type == 'lotto' %}
+<div class="card shadow-sm mb-4">
+    <div class="card-header">🧮 历史组合规律（前区）</div>
+    <div class="card-body">
+        <div class="row text-center">
+            <div class="col"><strong>{{ gs.sum_range[0] }}-{{ gs.sum_range[1] }}</strong><div class="small text-muted">和值高频区间</div></div>
+            <div class="col"><strong>{{ gs.odd_ratio_common }}</strong><div class="small text-muted">主流奇偶比</div></div>
+            <div class="col"><strong>{{ gs.big_small_ratio_common }}</strong><div class="small text-muted">主流大小比</div></div>
+            <div class="col"><strong>{{ gs.span_range[0] }}-{{ gs.span_range[1] }}</strong><div class="small text-muted">跨度高频区间</div></div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- 近期开奖 -->
+<div class="card shadow-sm">
+    <div class="card-header">📋 近 20 期开奖</div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+            <thead class="table-light"><tr><th>期号</th><th>日期</th><th>开奖号码</th></tr></thead>
+            <tbody>
+            {% for r in recent %}
+            <tr>
+                <td>{{ r.issue }}</td>
+                <td class="small">{{ r.draw_date[:10] if r.draw_date else '—' }}</td>
+                <td>
+                    <span class="balls-row">
+                    {% if games[game].type == 'lotto' %}
+                        {% for n in r.front %}{{ ball(n, 'ball-red') }}{% endfor %}
+                        <span class="ball-sep">+</span>
+                        {% for n in r.back %}{{ ball(n, 'ball-blue') }}{% endfor %}
+                    {% else %}
+                        {% for n in r.front %}{{ ball(n, 'ball-digit') }}{% endfor %}
+                    {% endif %}
+                    </span>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+window.LOTTERY_STATS = {{ stats_json|safe if stats_json else 'null' }};
+window.LOTTERY_GAME = "{{ game }}";
+window.STATS_API = "{{ url_for('api_stats', game=game) }}?days={{ days }}";
+window.OMIT_TREND_API = "{{ url_for('api_omit_trend', game=game) }}?days={{ days }}";
+window.PROB_API = "{{ url_for('api_probability', game=game) }}";
+window.EV_API = "{{ url_for('api_ev', game=game) }}";
+</script>
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script src="{{ url_for('static', filename='js/ev.js') }}"></script>
+{% endblock %}

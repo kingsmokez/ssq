@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+.venv/
+venv/
+
+# 数据库（运行时生成）
+data/*.db
+data/*.sqlite
+
+# 编辑器 / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 临时文件
+*.tmp
+_t*.py
+exp_*.py
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini

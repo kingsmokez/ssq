@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}总览 — 体彩推荐分析系统{% endblock %}
+
+{% macro ball(n, cls='ball-red') %}
+<span class="lotto-ball {{ cls }}">{{ '%02d' % n if n < 10 and cls != 'ball-digit' else n }}</span>
+{% endmacro %}
+
+{% macro game_card(g) %}
+{% set info = games[g] %}
+{% set lat = latest[g] %}
+{% set cfg = games[g] %}
+<div class="col-md-4 mb-3">
+    <div class="card game-card h-100 shadow-sm">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h5 class="card-title mb-0">{{ info.name }}</h5>
+                <span class="badge bg-light text-dark">{{ counts[g] }} 期</span>
+            </div>
+            {% if lat %}
+            <div class="text-muted small mb-2">
+                最新 {{ lat.issue }} · {{ lat.draw_date[:10] if lat.draw_date else '—' }}
+            </div>
+            <div class="balls-row mb-3">
+                {% if cfg.type == 'lotto' %}
+                    {% for n in lat.front %}{{ ball(n, 'ball-red') }}{% endfor %}
+                    <span class="ball-sep">+</span>
+                    {% for n in lat.back %}{{ ball(n, 'ball-blue') }}{% endfor %}
+                {% else %}
+                    {% for n in lat.front %}{{ ball(n, 'ball-digit') }}{% endfor %}
+                {% endif %}
+            </div>
+            {% if recos[g] %}
+            <div class="reco-mini">
+                <div class="text-muted small mb-1">最新推荐（首组 · {{ recos[g][0].label }}）</div>
+                {% if 'front' in recos[g][0].picks %}
+                <div class="balls-row">
+                    {% for n in recos[g][0].picks.front %}{{ ball(n, 'ball-red') }}{% endfor %}
+                    <span class="ball-sep">+</span>
+                    {% for n in recos[g][0].picks.back %}{{ ball(n, 'ball-blue') }}{% endfor %}
+                </div>
+                {% else %}
+                <div class="balls-row">
+                    {% for n in recos[g][0].picks.digits %}{{ ball(n, 'ball-digit') }}{% endfor %}
+                </div>
+                {% endif %}
+            </div>
+            {% else %}
+            <div class="text-muted small">暂无推荐，请先点击上方"刷新数据并计算推荐"。</div>
+            {% endif %}
+            {% else %}
+            <div class="text-muted small mb-2">暂无数据，请先点击"刷新数据并计算推荐"。</div>
+            {% endif %}
+            <a href="{{ url_for('detail', game=g) }}" class="btn btn-outline-danger btn-sm w-100 mt-3">
+                查看详情与图表 →
+            </a>
+        </div>
+    </div>
+</div>
+{% endmacro %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <div>
+        <h2 class="mb-0">📊 推荐总览</h2>
+        <p class="text-muted mb-0">基于近 2 年历史数据的科学综合打分推荐</p>
+    </div>
+    <button id="refreshBtn" class="btn btn-danger btn-lg">
+        🔄 刷新数据并计算推荐
+    </button>
+</div>
+
+<div id="refreshStatus" class="alert d-none"></div>
+
+<div class="row">
+    {% for g in game_order %}{{ game_card(g) }}{% endfor %}
+</div>
+
+<!-- 资金管理 -->
+<div class="card mt-4 shadow-sm border-secondary">
+    <div class="card-header bg-secondary text-white">
+        <strong>🛡️ 资金管理</strong>
+        <span class="small">（理性购彩，量力而行）</span>
+    </div>
+    <div class="card-body">
+        <div class="row align-items-center g-3">
+            <div class="col-md-5">
+                <label class="form-label small mb-1">本月已投入（元）</label>
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text">¥</span>
+                    <input type="number" id="monthSpent" class="form-control" min="0" placeholder="0">
+                    <button class="btn btn-outline-secondary" id="saveSpentBtn">记录</button>
+                </div>
+                <div class="form-text">数据仅存于本浏览器，不会上传。</div>
+            </div>
+            <div class="col-md-2 text-center">
+                <div class="small text-muted">建议月上限</div>
+                <div class="fs-5">¥200</div>
+            </div>
+            <div class="col-md-5">
+                <div id="budgetWarnBox" class="alert alert-info small mb-0 py-2">
+                    输入本月实际投入，系统会给出理性购彩提醒。
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if logs %}
+<div class="card mt-4 shadow-sm">
+    <div class="card-header bg-light">最近刷新记录</div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+            <thead class="table-light">
+                <tr><th>时间</th><th>玩法</th><th>新增</th><th>状态</th><th>信息</th></tr>
+            </thead>
+            <tbody>
+            {% for log in logs %}
+                <tr>
+                    <td class="small">{{ log.created_at[5:16] if log.created_at }}</td>
+                    <td>{{ games[log.game].name if log.game in games else log.game }}</td>
+                    <td>{{ log.new_count }}</td>
+                    <td>
+                        {% if log.status == 'ok' %}<span class="badge bg-success">成功</span>
+                        {% else %}<span class="badge bg-danger">失败</span>{% endif %}
+                    </td>
+                    <td class="small text-muted">{{ log.message }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}

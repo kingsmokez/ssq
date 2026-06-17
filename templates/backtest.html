@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block title %}命中回测 — 体彩推荐分析系统{% endblock %}
+
+{% macro ball(n, cls='ball-red') %}
+<span class="lotto-ball {{ cls }}">{{ '%02d' % n if n < 10 and cls != 'ball-digit' else n }}</span>
+{% endmacro %}
+
+{% block content %}
+<h2 class="mb-1">🎯 模型有效性验证 & 命中回测</h2>
+<p class="text-muted">用历史数据逐期回放验证：模型推荐到底比纯随机好多少？</p>
+
+<div class="alert alert-warning small mb-3">
+    ⚠️ <strong>核心结论先行</strong>：彩票每次开奖为独立随机事件，<strong>任何模型都无法可靠预测中奖号码</strong>。
+    本页通过"逐期回放"（用 t 期之前的数据预测 t 期，对比实际开奖）给出模型 vs 纯随机基线的命中率对比。
+    如果模型≈随机，那是数学事实，不是 bug。
+</div>
+
+<!-- 模型有效性验证（AJAX 加载 /api/backtest） -->
+<div class="card shadow-sm mb-4 border-warning">
+    <div class="card-header bg-warning bg-opacity-10">
+        <div class="d-flex justify-content-between align-items-center">
+            <strong>🔬 模型 vs 随机基线（逐期回放验证）</strong>
+            <button id="runBacktestBtn" class="btn btn-warning btn-sm">
+                ▶ 运行验证（约30秒）
+            </button>
+        </div>
+    </div>
+    <div class="card-body" id="backtestResultArea">
+        <p class="text-muted small mb-0">
+            点击"运行验证"后，系统会用历史数据逐期模拟预测（约119个测试点/玩法），
+            对比模型命中率与纯随机基线，给出诚实结论。验证过程需要30-60秒。
+        </p>
+    </div>
+</div>
+
+<hr class="my-4">
+
+<h4 class="mb-3">📋 推荐命中率明细（最近推荐 vs 对应期开奖）</h4>
+
+{% for g in game_order %}
+{% set res = results[g] %}
+<div class="card shadow-sm mb-3">
+    <div class="card-header bg-light d-flex justify-content-between">
+        <strong>{{ games[g].name }}</strong>
+        <span class="small text-muted">
+            已测 {{ res.aggregate.batches_tested }} 批
+            {% if games[g].type == 'lotto' and res.aggregate.front_hit_rate %}
+             · 前区命中率 {{ (res.aggregate.front_hit_rate * 100)|round(1) }}%
+             · 后区命中率 {{ (res.aggregate.back_hit_rate * 100)|round(1) }}%
+            {% elif res.aggregate.pos_hit_rate %}
+             · 位置命中率 {{ (res.aggregate.pos_hit_rate * 100)|round(1) }}%
+            {% endif %}
+        </span>
+    </div>
+    <div class="card-body">
+        {% if res.batches %}
+        <!-- 汇总统计 -->
+        <div class="row mb-3">
+            <div class="col-md-4">
+                <div class="card bg-light">
+                    <div class="card-body text-center p-2">
+                        <div class="text-muted small">测试批次数</div>
+                        <div class="fs-4 fw-bold">{{ res.aggregate.batches_tested }}</div>
+                    </div>
+                </div>
+            </div>
+            {% if games[g].type == 'lotto' %}
+            <div class="col-md-4">
+                <div class="card bg-light">
+                    <div class="card-body text-center p-2">
+                        <div class="text-muted small">前区命中率</div>
+                        <div class="fs-4 fw-bold {% if res.aggregate.front_hit_rate > 0.2 %}text-success{% elif res.aggregate.front_hit_rate > 0.1 %}text-warning{% else %}text-secondary{% endif %}">
+                            {{ (res.aggregate.front_hit_rate * 100)|round(1) }}%
+                        </div>
+                        <div class="text-muted small">理论约 {{ (5/35*100)|round(1) }}%</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card bg-light">
+                    <div class="card-body text-center p-2">
+                        <div class="text-muted small">后区命中率</div>
+                        <div class="fs-4 fw-bold {% if res.aggregate.back_hit_rate > 0.25 %}text-success{% elif res.aggregate.back_hit_rate > 0.1 %}text-warning{% else %}text-secondary{% endif %}">
+                            {{ (res.aggregate.back_hit_rate * 100)|round(1) }}%
+                        </div>
+                        <div class="text-muted small">理论约 {{ (2/12*100)|round(1) }}%</div>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="col-md-4">
+                <div class="card bg-light">
+                    <div class="card-body text-center p-2">
+                        <div class="text-muted small">位置命中率</div>
+                        <div class="fs-4 fw-bold {% if res.aggregate.pos_hit_rate > 0.2 %}text-success{% elif res.aggregate.pos_hit_rate > 0.1 %}text-warning{% else %}text-secondary{% endif %}">
+                            {{ (res.aggregate.pos_hit_rate * 100)|round(1) }}%
+                        </div>
+                        <div class="text-muted small">理论约 {{ (1/10*100)|round(1) }}%</div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- 历史批次明细 -->
+        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+            <table class="table table-sm table-hover">
+                <thead class="table-light sticky-top"><tr>
+                    <th>推荐时间</th>
+                    <th>对应期号</th>
+                    <th>推荐组</th>
+                    <th>命中情况</th>
+                </tr></thead>
+                <tbody>
+                {% for bh in res.batches %}
+                    {% for grp in bh.groups %}
+                    <tr>
+                        <td class="small{% if loop.index0 == 0 %} fw-bold{% endif %}">
+                            {% if loop.index0 == 0 %}{{ bh.created_at[:16] }}{% endif %}
+                        </td>
+                        <td class="small{% if loop.index0 == 0 %} fw-bold{% endif %}">
+                            {% if loop.index0 == 0 %}{{ bh.draw_issue }} ({{ bh.draw_date }}){% endif %}
+                        </td>
+                        <td class="small">{{ grp.label }}</td>
+                        <td>
+                            {% if grp.front_hit is defined %}
+                                <span class="badge {% if grp.front_hit >= 4 %}bg-success{% elif grp.front_hit >=2 %}bg-warning{% else %}bg-secondary{% endif %}">
+                                    前区 {{ grp.front_hit }}/{{ grp.total_front }}
+                                </span>
+                                <span class="badge {% if grp.back_hit >= 1 %}bg-success{% else %}bg-secondary{% endif %}">
+                                    后区 {{ grp.back_hit }}/{{ grp.total_back }}
+                                </span>
+                                {% if grp.front_hit == grp.total_front and grp.back_hit == grp.total_back %}
+                                <span class="badge bg-danger">🎉 一等奖！</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="badge {% if grp.position_match >=3 %}bg-success{% elif grp.position_match >=1 %}bg-warning{% else %}bg-secondary{% endif %}">
+                                    位置命中 {{ grp.position_match }}/{{ grp.total_positions }}
+                                </span>
+                                {% if grp.position_match == grp.total_positions %}
+                                <span class="badge bg-danger">🎉 直选全中！</span>
+                                {% endif %}
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-muted">暂无推荐数据。请先到总览页"刷新数据并计算推荐"。</div>
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+
+<script>
+(function() {
+    var btn = document.getElementById('runBacktestBtn');
+    var area = document.getElementById('backtestResultArea');
+    if (!btn || !area) return;
+
+    btn.addEventListener('click', function() {
+        btn.disabled = true;
+        btn.textContent = '⏳ 验证中...';
+        area.innerHTML = '<div class="text-center py-3"><div class="spinner-border text-warning" role="status"></div><p class="small text-muted mt-2">正在用119个历史测试点逐期回放验证，请耐心等待...</p></div>';
+
+        fetch('/api/backtest?n=120')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (!data.ok) {
+                    area.innerHTML = '<div class="alert alert-danger">验证失败: ' + (data.error || '未知') + '</div>';
+                    return;
+                }
+                var html = '';
+                var results = data.results;
+                var gameNames = { dlt: '超级大乐透', pl3: '排列3', pl5: '排列5' };
+	                Object.keys(results).forEach(function(g) {
+	                    var r = results[g];
+	                    var liftColor = r.lift > 0.10 ? 'text-success' : (r.lift < -0.10 ? 'text-danger' : 'text-secondary');
+	                    var sigBadge = r.is_significant ? '<span class="badge bg-danger ms-1">显著</span>' : '<span class="badge bg-secondary ms-1">不显著</span>';
+	                    html += '<div class="row mb-3 align-items-center">';
+	                    html += '<div class="col-md-2"><strong>' + (gameNames[g] || g) + '</strong></div>';
+	                    html += '<div class="col-md-1 text-center"><div class="small text-muted">测试点</div><div class="fs-5 fw-bold">' + r.n_points + '</div></div>';
+	                    html += '<div class="col-md-2 text-center"><div class="small text-muted">模型命中率</div><div class="fs-5 fw-bold">' + (r.model_hit_rate * 100).toFixed(2) + '%</div>';
+	                    html += '<div class="small text-muted">95%CI [' + (r.ci_lower * 100).toFixed(1) + '%, ' + (r.ci_upper * 100).toFixed(1) + '%]</div></div>';
+	                    html += '<div class="col-md-1 text-center"><div class="small text-muted">随机基线</div><div class="fs-5 fw-bold text-muted">' + (r.random_hit_rate * 100).toFixed(2) + '%</div></div>';
+	                    html += '<div class="col-md-1 text-center"><div class="small text-muted">提升</div><div class="fs-5 fw-bold ' + liftColor + '">' + (r.lift > 0 ? '+' : '') + (r.lift * 100).toFixed(1) + '%</div></div>';
+	                    html += '<div class="col-md-1 text-center"><div class="small text-muted">p值</div><div class="fs-6 fw-bold">' + r.p_value.toFixed(3) + sigBadge + '</div></div>';
+	                    html += '<div class="col-md-1 text-center"><div class="small text-muted">χ²</div><div class="fs-6">' + r.chi2.toFixed(2) + ' (p=' + r.chi2_p.toFixed(3) + ')</div></div>';
+	                    html += '<div class="col-md-3"><p class="small mb-0">' + r.verdict + '</p></div>';
+	                    html += '</div>';
+	                });
+                html += '<div class="alert alert-info small mt-3">💡 如果模型的提升在 ±10% 以内，说明模型与纯随机无显著差别——这符合彩票独立随机的数学本质。回测点越多，结论越可靠。</div>';
+                area.innerHTML = html;
+            })
+            .catch(function(err) {
+                area.innerHTML = '<div class="alert alert-danger">网络错误: ' + err + '</div>';
+            })
+            .finally(function() {
+                btn.disabled = false;
+                btn.textContent = '▶ 再次验证';
+            });
+    });
+})();
+</script>
+{% endblock %}

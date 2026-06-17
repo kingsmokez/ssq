@@ -23,6 +23,7 @@
                 {% endfor %}
                 {% endif %}
                 <li class="nav-item"><a class="nav-link {% if active=='history' %}active{% endif %}" href="{{ url_for('history') }}">历史数据</a></li>
+                <li class="nav-item"><a class="nav-link {% if active=='randomness' %}active{% endif %}" href="{{ url_for('randomness_view') }}">随机性检测</a></li>
                 <li class="nav-item"><a class="nav-link {% if active=='backtest' %}active{% endif %}" href="{{ url_for('backtest') }}">命中回测</a></li>
             </ul>
             <div class="d-flex align-items-center gap-2">

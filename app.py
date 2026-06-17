@@ -105,6 +105,14 @@ def history():
         disclaimer=DISCLAIMER, active="history")
 
 
+@app.route("/randomness")
+@login_required
+def randomness_view():
+    return render_template(
+        "randomness.html", games=GAMES, game_order=GAME_ORDER,
+        disclaimer=DISCLAIMER, active="randomness")
+
+
 @app.route("/backtest")
 @login_required
 def backtest():
@@ -326,9 +334,30 @@ def api_backtest():
     """运行逐期回测，返回模型 vs 随机基线的命中率对比。
     耗时约 30-60 秒（3 玩法 × 119 测试点）。"""
     n = int(request.args.get("n", 120))
+    full = request.args.get("full", "0") == "1"  # ?full=1 启用全管线回测
     try:
-        results = backtest_all(n_test=n)
-        payload = {g: backtest_as_dict(r) for g, r in results.items()}
+        if full:
+            from lottery.backtester import backtest_full_pipeline_all, full_pipeline_as_dict
+            results = backtest_full_pipeline_all(n_test=n)
+            payload = {g: full_pipeline_as_dict(r) for g, r in results.items()}
+        else:
+            results = backtest_all(n_test=n)
+            payload = {g: backtest_as_dict(r) for g, r in results.items()}
+        return jsonify({"ok": True, "results": payload, "full_pipeline": full})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/backtest/full")
+@login_required
+def api_backtest_full():
+    """全管线回测：测试真实 recommend() 输出的所有6组+复式。
+    耗时较长（~90秒），但测试的是用户实际看到的推荐。"""
+    n = int(request.args.get("n", 80))
+    try:
+        from lottery.backtester import backtest_full_pipeline_all, full_pipeline_as_dict
+        results = backtest_full_pipeline_all(n_test=n)
+        payload = {g: full_pipeline_as_dict(r) for g, r in results.items()}
         return jsonify({"ok": True, "results": payload})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -375,6 +404,30 @@ def api_probability(game):
         })
 
 
+@app.route("/api/randomness/<game>")
+@login_required
+def api_randomness(game):
+    """对某玩法的历史开奖做全套随机性检测。
+
+    包含：卡方拟合优度检验、游程检验、频率平衡分析。
+    结果用于在前端展示"彩票是否真的是随机的"。
+    """
+    if game not in GAMES:
+        abort(404)
+    from lottery.randomness import test_draws
+    draws = models.fetch_draws(game, limit=500, order_desc=True)
+    cfg = GAMES[game]
+    if cfg["type"] == "lotto":
+        pool_size = len(cfg["front_pool"])
+        draw_pick = cfg["front_pick"]
+    else:
+        pool_size = 10
+        draw_pick = 1
+    result = test_draws(draws, pool_size, draw_pick)
+    return jsonify(result)
+
+
+
 @app.route("/api/ev/<game>")
 @login_required
 def api_ev(game):
@@ -389,7 +442,10 @@ def api_ev(game):
     if budget < 2 or budget > 100000:
         return jsonify({"ok": False, "error": "预算需在 2~100000 元之间"}), 400
     from lottery.ev_calc import recommend_budget
+    from lottery.ev_calc import greedy_cover_report as gcr
     plan = recommend_budget(game, budget)
+    # 同时返回贪心覆盖报告
+    cover_report = gcr(game, max_budget=budget)
     def _ser(d):
         out = dict(d)
         if "value_ratio" in out:
@@ -399,6 +455,7 @@ def api_ev(game):
         "ok": True, "game": game, "budget": budget,
         "recommended": _ser(plan.recommended),
         "alternatives": [_ser(a) for a in plan.alternatives],
+        "greedy_cover": cover_report,
     })
 
 

@@ -161,10 +161,19 @@
     var area = document.getElementById('backtestResultArea');
     if (!btn || !area) return;
 
+    // Chart.js 全局配置
+    var chartInstances = {};
+    var gameNames = { dlt: '超级大乐透', pl3: '排列3', pl5: '排列5' };
+    var gameColors = { dlt: '#dc3545', pl3: '#0d6efd', pl5: '#198754' };
+
     btn.addEventListener('click', function() {
         btn.disabled = true;
         btn.textContent = '⏳ 验证中...';
         area.innerHTML = '<div class="text-center py-3"><div class="spinner-border text-warning" role="status"></div><p class="small text-muted mt-2">正在用119个历史测试点逐期回放验证，请耐心等待...</p></div>';
+
+        // 清除旧图表
+        Object.values(chartInstances).forEach(function(c) { if (c) c.destroy(); });
+        chartInstances = {};
 
         fetch('/api/backtest?n=120')
             .then(function(r) { return r.json(); })
@@ -175,25 +184,80 @@
                 }
                 var html = '';
                 var results = data.results;
-                var gameNames = { dlt: '超级大乐透', pl3: '排列3', pl5: '排列5' };
-	                Object.keys(results).forEach(function(g) {
-	                    var r = results[g];
-	                    var liftColor = r.lift > 0.10 ? 'text-success' : (r.lift < -0.10 ? 'text-danger' : 'text-secondary');
-	                    var sigBadge = r.is_significant ? '<span class="badge bg-danger ms-1">显著</span>' : '<span class="badge bg-secondary ms-1">不显著</span>';
-	                    html += '<div class="row mb-3 align-items-center">';
-	                    html += '<div class="col-md-2"><strong>' + (gameNames[g] || g) + '</strong></div>';
-	                    html += '<div class="col-md-1 text-center"><div class="small text-muted">测试点</div><div class="fs-5 fw-bold">' + r.n_points + '</div></div>';
-	                    html += '<div class="col-md-2 text-center"><div class="small text-muted">模型命中率</div><div class="fs-5 fw-bold">' + (r.model_hit_rate * 100).toFixed(2) + '%</div>';
-	                    html += '<div class="small text-muted">95%CI [' + (r.ci_lower * 100).toFixed(1) + '%, ' + (r.ci_upper * 100).toFixed(1) + '%]</div></div>';
-	                    html += '<div class="col-md-1 text-center"><div class="small text-muted">随机基线</div><div class="fs-5 fw-bold text-muted">' + (r.random_hit_rate * 100).toFixed(2) + '%</div></div>';
-	                    html += '<div class="col-md-1 text-center"><div class="small text-muted">提升</div><div class="fs-5 fw-bold ' + liftColor + '">' + (r.lift > 0 ? '+' : '') + (r.lift * 100).toFixed(1) + '%</div></div>';
-	                    html += '<div class="col-md-1 text-center"><div class="small text-muted">p值</div><div class="fs-6 fw-bold">' + r.p_value.toFixed(3) + sigBadge + '</div></div>';
-	                    html += '<div class="col-md-1 text-center"><div class="small text-muted">χ²</div><div class="fs-6">' + r.chi2.toFixed(2) + ' (p=' + r.chi2_p.toFixed(3) + ')</div></div>';
-	                    html += '<div class="col-md-3"><p class="small mb-0">' + r.verdict + '</p></div>';
-	                    html += '</div>';
-	                });
+                var gameKeys = Object.keys(results);
+
+                // ===== 汇总对比表 =====
+                html += '<div class="table-responsive"><table class="table table-sm table-bordered mb-4"><thead class="table-warning"><tr>' +
+                    '<th>玩法</th>' +
+                    '<th>测试点</th>' +
+                    '<th>模型命中率</th>' +
+                    '<th>95%CI</th>' +
+                    '<th>随机基线</th>' +
+                    '<th>提升</th>' +
+                    '<th>全中率</th>' +
+                    '<th>p值</th>' +
+                    '<th>Fisher p</th>' +
+                    '<th>贝叶斯P(优于随机)</th>' +
+                    '</tr></thead><tbody>';
+
+                gameKeys.forEach(function(g) {
+                    var r = results[g];
+                    var liftColor = r.lift > 0.10 ? 'text-success' : (r.lift < -0.10 ? 'text-danger' : 'text-secondary');
+                    html += '<tr>' +
+                        '<td><strong>' + (gameNames[g] || g) + '</strong></td>' +
+                        '<td>' + r.n_points + '</td>' +
+                        '<td class="fw-bold">' + (r.model_hit_rate * 100).toFixed(2) + '%</td>' +
+                        '<td class="small">[' + (r.ci_lower * 100).toFixed(1) + '%, ' + (r.ci_upper * 100).toFixed(1) + '%]</td>' +
+                        '<td class="text-muted">' + (r.random_hit_rate * 100).toFixed(2) + '%</td>' +
+                        '<td class="fw-bold ' + liftColor + '">' + (r.lift > 0 ? '+' : '') + (r.lift * 100).toFixed(1) + '%</td>' +
+                        '<td>' + (r.full_hit_rate * 100).toFixed(2) + '%</td>' +
+                        '<td>' + r.p_value.toFixed(4) + (r.is_significant ? ' <span class="badge bg-danger">显著</span>' : '') + '</td>' +
+                        '<td>' + r.fisher_p_value.toFixed(4) + '</td>' +
+                        '<td>' + (r.bayes_prob_better * 100).toFixed(1) + '%</td>' +
+                        '</tr>';
+                });
+                html += '</tbody></table></div>';
+
+                // ===== 结论文字 =====
+                gameKeys.forEach(function(g) {
+                    html += '<div class="alert alert-info small py-2 mb-2">💡 <strong>' + (gameNames[g] || g) + '</strong>：' + results[g].verdict + '</div>';
+                });
+
+                // ===== 图表区域 =====
+                html += '<div class="row mt-4">';
+                gameKeys.forEach(function(g) {
+                    var r = results[g];
+                    // 命中分布直方图
+                    html += '<div class="col-md-6 mb-4"><div class="card shadow-sm"><div class="card-header bg-light py-2"><strong>' +
+                        (gameNames[g] || g) + ' — 命中分布</strong></div>' +
+                        '<div class="card-body"><canvas id="distChart_' + g + '" height="200"></canvas></div></div></div>';
+                    // 累积命中率趋势图
+                    html += '<div class="col-md-6 mb-4"><div class="card shadow-sm"><div class="card-header bg-light py-2"><strong>' +
+                        (gameNames[g] || g) + ' — 累积命中率趋势</strong></div>' +
+                        '<div class="card-body"><canvas id="cumChart_' + g + '" height="200"></canvas></div></div></div>';
+                });
+                html += '</div>';
+
+                // ===== 命中分布饼图（汇总） =====
+                html += '<div class="row"><div class="col-md-6 mb-4"><div class="card shadow-sm"><div class="card-header bg-light py-2"><strong>各玩法命中类别分布</strong></div>' +
+                    '<div class="card-body"><canvas id="distSummaryChart" height="250"></canvas></div></div></div>';
+                // 每位命中率（仅 digit 玩法）
+                html += '<div class="col-md-6 mb-4"><div class="card shadow-sm"><div class="card-header bg-light py-2"><strong>排列3/5 每位命中率</strong></div>' +
+                    '<div class="card-body"><canvas id="posChart" height="250"></canvas></div></div></div></div>';
+
                 html += '<div class="alert alert-info small mt-3">💡 如果模型的提升在 ±10% 以内，说明模型与纯随机无显著差别——这符合彩票独立随机的数学本质。回测点越多，结论越可靠。</div>';
                 area.innerHTML = html;
+
+                // ===== 绘制图表（用 Chart.js CDN） =====
+                // 加载 Chart.js
+                if (typeof Chart === 'undefined') {
+                    var script = document.createElement('script');
+                    script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+                    script.onload = function() { drawAllCharts(results, gameKeys, gameColors); };
+                    document.head.appendChild(script);
+                } else {
+                    drawAllCharts(results, gameKeys, gameColors);
+                }
             })
             .catch(function(err) {
                 area.innerHTML = '<div class="alert alert-danger">网络错误: ' + err + '</div>';
@@ -203,6 +267,131 @@
                 btn.textContent = '▶ 再次验证';
             });
     });
+
+    function drawAllCharts(results, gameKeys, gameColors) {
+        // 每个玩法的命中分布
+        gameKeys.forEach(function(g) {
+            var r = results[g];
+            var dist = r.hit_distribution || {0:0,1:0,2:0,'3+':0};
+            var ctx1 = document.getElementById('distChart_' + g);
+            if (ctx1) {
+                chartInstances['dist_' + g] = new Chart(ctx1, {
+                    type: 'bar',
+                    data: {
+                        labels: ['全不中 (0)', '中1个', '中2个', '中3+个'],
+                        datasets: [{
+                            label: '测试点数量',
+                            data: [dist['0'] || 0, dist['1'] || 0, dist['2'] || 0, dist['3+'] || 0],
+                            backgroundColor: ['#6c757d', '#ffc107', '#fd7e14', '#dc3545'],
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+                        plugins: { legend: { display: false } }
+                    }
+                });
+            }
+
+            // 累积命中率趋势
+            var cumRates = r.cumulative_rates || [];
+            var ctx2 = document.getElementById('cumChart_' + g);
+            if (ctx2 && cumRates.length > 0) {
+                var labels = cumRates.map(function(_, i) { return i + 1; });
+                chartInstances['cum_' + g] = new Chart(ctx2, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: '累积命中率',
+                            data: cumRates.map(function(v) { return v * 100; }),
+                            borderColor: gameColors[g] || '#0d6efd',
+                            backgroundColor: (gameColors[g] || '#0d6efd') + '20',
+                            fill: true,
+                            tension: 0.3,
+                            pointRadius: 0,
+                        }, {
+                            label: '随机基线',
+                            data: cumRates.map(function() { return r.random_hit_rate * 100; }),
+                            borderColor: '#adb5bd',
+                            borderDash: [5, 5],
+                            pointRadius: 0,
+                            borderWidth: 1,
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        scales: { y: { beginAtZero: true, title: { display: true, text: '命中率 (%)' } } },
+                        plugins: { legend: { display: true, position: 'bottom' } }
+                    }
+                });
+            }
+        });
+
+        // 汇总命中分布分组柱状图
+        var ctxSummary = document.getElementById('distSummaryChart');
+        if (ctxSummary) {
+            chartInstances['distSummary'] = new Chart(ctxSummary, {
+                type: 'bar',
+                data: {
+                    labels: ['全不中 (0)', '中1个', '中2个', '中3+个'],
+                    datasets: gameKeys.map(function(g) {
+                        var dist = results[g].hit_distribution || {0:0,1:0,2:0,'3+':0};
+                        var total = Object.values(dist).reduce(function(a, b) { return a + b; }, 0) || 1;
+                        return {
+                            label: gameNames[g] || g,
+                            data: [((dist['0']||0)/total*100).toFixed(1), ((dist['1']||0)/total*100).toFixed(1),
+                                   ((dist['2']||0)/total*100).toFixed(1), ((dist['3+']||0)/total*100).toFixed(1)],
+                            backgroundColor: (gameColors[g] || '#0d6efd') + '80',
+                            borderColor: gameColors[g] || '#0d6efd',
+                            borderWidth: 1,
+                        };
+                    })
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: true, title: { display: true, text: '占比 (%)' } } },
+                    plugins: { legend: { display: true, position: 'bottom' } }
+                }
+            });
+        }
+
+        // 每位命中率（排列3/5）
+        var ctxPos = document.getElementById('posChart');
+        if (ctxPos) {
+            var posLabels = [];
+            var posDatasets = [];
+            gameKeys.forEach(function(g) {
+                var rates = results[g].per_pos_hit_rates || {};
+                var keys = Object.keys(rates);
+                if (keys.length > 0) {
+                    if (posLabels.length === 0) {
+                        posLabels = keys.map(function(k) { return '第' + (parseInt(k) + 1) + '位'; });
+                    }
+                    posDatasets.push({
+                        label: gameNames[g] || g,
+                        data: keys.map(function(k) { return rates[k] * 100; }),
+                        backgroundColor: (gameColors[g] || '#0d6efd') + '80',
+                        borderColor: gameColors[g] || '#0d6efd',
+                        borderWidth: 1,
+                    });
+                }
+            });
+            if (posDatasets.length > 0) {
+                chartInstances['pos'] = new Chart(ctxPos, {
+                    type: 'bar',
+                    data: { labels: posLabels, datasets: posDatasets },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        scales: { y: { beginAtZero: true, title: { display: true, text: '命中率 (%)' } } },
+                        plugins: { legend: { display: true, position: 'bottom' } }
+                    }
+                });
+            } else {
+                ctxPos.parentElement.innerHTML = '<div class="text-muted text-center py-4">大乐透不适用按位命中率</div>';
+            }
+        }
+    }
 })();
 </script>
 {% endblock %}

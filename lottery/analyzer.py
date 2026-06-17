@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """统计引擎 — 基于历史开奖计算多维特征。
 
 输入：从 DB 取某玩法的历史开奖（最新在前）。
@@ -56,6 +56,7 @@ class GameStats:
     big_small_ratio_common: str = ""   # 大小比主流
     span_range: tuple = (0, 0)         # 跨度众数区间
     cooccur: Dict = field(default_factory=dict)  # 前区号码共生矩阵 {n: {m: rate}}
+    gap_dist: Dict = field(default_factory=dict)  # 前区间距分布 {gap1~4: {mean, median, p10~p90}}
     # digit 组合约束
     digit_sum_range: tuple = (0, 0)    # 各位和值众数区间
     digit_odd_count_common: int = 0    # 最常见奇数个数
@@ -91,9 +92,10 @@ def _build_window(records, days: int):
 
 
 def _per_number_stats(pool: List[int], seq_of_sets, total: int, momentum_n: int,
-                      cold_n: int) -> Dict[int, NumberStat]:
+                      cold_n: int, half_life: int = None) -> Dict[int, NumberStat]:
     """通用：对一组候选号（pool）计算各特征。
     seq_of_sets: 每期开奖的号码集合列表，最新在前（index 0 最新）。
+    half_life: EWMA 半衰期，越大越平滑。None=从 config 读取。
     """
     stats = {n: NumberStat(number=n) for n in pool}
     if total == 0 or not seq_of_sets:
@@ -128,10 +130,13 @@ def _per_number_stats(pool: List[int], seq_of_sets, total: int, momentum_n: int,
 
         # 增强特征：贝叶斯平滑频率（抗小样本噪声）
         from .features import bayes_smoothed_freq, ewma_freq, omission_percentile
+        if half_life is None:
+            from config import EWMA_HALF_LIFE
+            half_life = EWMA_HALF_LIFE
         st.bayes_freq = bayes_smoothed_freq(appear_count, total, len(pool))
         # 指数加权频率：从 seq_of_sets 提取该号的出现序列（最新在前）
         presence = [1 if n in s else 0 for s in seq_of_sets]
-        st.ewma_freq = ewma_freq(presence, half_life=25)
+        st.ewma_freq = ewma_freq(presence, half_life=half_life)
         # 遗漏分位
         if appear_count >= 2:
             gaps = [appear_indices[i + 1] - appear_indices[i]
@@ -271,6 +276,9 @@ def analyze(game: str, days: int = STATS_WINDOW_DAYS) -> GameStats:
         from .features import cooccurrence_matrix
         gs.cooccur = cooccurrence_matrix(
             [r["front"] for r in window], cfg["front_pool"])
+        # 计算间距分布
+        from .features import gap_distribution
+        gs.gap_dist = gap_distribution([r["front"] for r in window], len(cfg["front_pool"]))
     else:
         positions = cfg["positions"]
         pool = cfg["digit_pool"]
@@ -287,6 +295,61 @@ def analyze(game: str, days: int = STATS_WINDOW_DAYS) -> GameStats:
             gs.position_stats[pos] = _per_number_stats(
                 pool, seq, len(window), MOMENTUM_RECENT_N, COLD_HOT_RECENT_N)
         # digit 组合约束
+        gs.digit_sum_range, gs.digit_odd_count_common = \
+            _digit_combo_constraints(window, positions)
+    return gs
+
+
+def analyze_from_records(game: str, records: list, days: int = STATS_WINDOW_DAYS) -> GameStats:
+    """从给定记录（最新在前）计算统计快照，不访问数据库。
+
+    用于回测：传入"t期之前"的记录，模拟当时的统计模型。
+    """
+    cfg = GAMES[game]
+    gs = GameStats(
+        game=game, name=cfg["name"], total_draws=len(records),
+        latest_numbers=records[0]["front"] + records[0]["back"] if records else [],
+        latest_issue=records[0]["issue"] if records else "",
+        latest_date=records[0]["draw_date"][:10] if records and records[0]["draw_date"] else "",
+        computed_at=datetime.now().isoformat(timespec="seconds"),
+    )
+    if not records:
+        return gs
+
+    window = _build_window(records, days)
+    if len(window) < 20:
+        window = records  # 退化为用所有记录
+    gs.window_draws = len(window)
+
+    if cfg["type"] == "lotto":
+        front_sets = [set(r["front"]) for r in window]
+        back_sets = [set(r["back"]) for r in window]
+        gs.front_stats = _per_number_stats(
+            cfg["front_pool"], front_sets, len(window),
+            MOMENTUM_RECENT_N, COLD_HOT_RECENT_N)
+        gs.back_stats = _per_number_stats(
+            cfg["back_pool"], back_sets, len(window),
+            MOMENTUM_RECENT_N, COLD_HOT_RECENT_N)
+        gs.sum_range, gs.odd_ratio_common, gs.big_small_ratio_common, gs.span_range = \
+            _combo_constraints([r["front"] for r in window])
+        from .features import cooccurrence_matrix, gap_distribution
+        gs.cooccur = cooccurrence_matrix(
+            [r["front"] for r in window], cfg["front_pool"])
+        gs.gap_dist = gap_distribution([r["front"] for r in window], len(cfg["front_pool"]))
+    else:
+        positions = cfg["positions"]
+        pool = cfg["digit_pool"]
+        gs.position_stats = {}
+        for pos in range(positions):
+            seq = []
+            for r in window:
+                digits = r["front"]
+                if pos < len(digits):
+                    seq.append({digits[pos]})
+                else:
+                    seq.append(set())
+            gs.position_stats[pos] = _per_number_stats(
+                pool, seq, len(window), MOMENTUM_RECENT_N, COLD_HOT_RECENT_N)
         gs.digit_sum_range, gs.digit_odd_count_common = \
             _digit_combo_constraints(window, positions)
     return gs

@@ -2,28 +2,24 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
-*.egg
 dist/
 build/
 .venv/
 venv/
 
-# 数据库（运行时生成）
+# Data
 data/*.db
-data/*.sqlite
+*.db
 
-# 编辑器 / IDE
-.vscode/
+# IDE
 .idea/
+.vscode/
 *.swp
 *.swo
 
-# 临时文件
-*.tmp
-_t*.py
-exp_*.py
-
 # OS
-Thumbs.db
 .DS_Store
-desktop.ini
+Thumbs.db
+
+# Env
+.env

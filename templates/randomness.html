@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% block title %}随机性检测 — 体彩推荐分析系统{% endblock %}
+
+{% block content %}
+<h2 class="mb-1">🎲 随机性检测</h2>
+<p class="text-muted">用统计检验验证历史开奖是否真的是均匀随机——这应该是真的。</p>
+
+<div class="alert alert-info small mb-3">
+    💡 <strong>核心问题</strong>：如果历史开奖存在可用统计检测出的"规律"，那彩票就不是随机的。
+    但数学定理告诉我们独立随机是不可预测的。本页用客观统计验证这一点。
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+        <strong>选择玩法进行检测</strong>
+        <div>
+            <select id="gameSelect" class="form-select form-select-sm d-inline-block" style="width:auto;">
+                <option value="dlt" {% if game=='dlt' %}selected{% endif %}>超级大乐透</option>
+                <option value="pl3" {% if game=='pl3' %}selected{% endif %}>排列3</option>
+                <option value="pl5" {% if game=='pl5' %}selected{% endif %}>排列5</option>
+            </select>
+            <button id="runTestBtn" class="btn btn-primary btn-sm ms-2">▶ 运行检测</button>
+        </div>
+    </div>
+    <div class="card-body" id="randomnessResultArea">
+        <p class="text-muted small mb-0">选择玩法并点击"运行检测"，系统会对近 500 期开奖做全套随机性检验。</p>
+    </div>
+</div>
+
+<script>
+(function() {
+    var btn = document.getElementById('runTestBtn');
+    var area = document.getElementById('randomnessResultArea');
+    var sel = document.getElementById('gameSelect');
+    if (!btn || !area || !sel) return;
+
+    btn.addEventListener('click', function() {
+        var game = sel.value;
+        btn.disabled = true;
+        btn.textContent = '⏳ 检测中...';
+        area.innerHTML = '<div class="text-center py-3"><div class="spinner-border text-primary" role="status"></div></div>';
+
+        fetch('/api/randomness/' + game)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.error) {
+                    area.innerHTML = '<div class="alert alert-danger">' + data.error + '</div>';
+                    return;
+                }
+                var html = '';
+
+                // 总体结论
+                html += '<div class="alert ' +
+                    (data.chi_square && data.chi_square.is_significant ? 'alert-warning' : 'alert-success') +
+                    ' mb-4"><strong>📊 综合结论</strong><br>' + data.overall + '</div>';
+
+                // 基本信息
+                html += '<div class="row mb-3">' +
+                    '<div class="col-md-3"><div class="card bg-light"><div class="card-body text-center p-2">' +
+                    '<div class="text-muted small">检测期数</div><div class="fs-5 fw-bold">' + data.total_draws + '</div></div></div></div>' +
+                    '<div class="col-md-3"><div class="card bg-light"><div class="card-body text-center p-2">' +
+                    '<div class="text-muted small">总出现次数</div><div class="fs-5 fw-bold">' + data.total_appearances + '</div></div></div></div>' +
+                    '<div class="col-md-3"><div class="card bg-light"><div class="card-body text-center p-2">' +
+                    '<div class="text-muted small">号池大小</div><div class="fs-5 fw-bold">' + data.pool_size + '</div></div></div></div>' +
+                    '<div class="col-md-3"><div class="card bg-light"><div class="card-body text-center p-2">' +
+                    '<div class="text-muted small">期望频率</div><div class="fs-5 fw-bold">' + (data.frequency_balance ? data.frequency_balance.expected_freq : '-') + '</div></div></div></div>' +
+                    '</div>';
+
+                // 卡方检验
+                var chi = data.chi_square || {};
+                html += '<div class="card mb-3"><div class="card-header ' +
+                    (chi.is_significant ? 'bg-warning bg-opacity-25' : 'bg-success bg-opacity-10') +
+                    '"><strong>① 卡方拟合优度检验</strong> — H₀：每个号码出现概率相等</div>';
+                html += '<div class="card-body"><div class="row">';
+                html += '<div class="col-md-3"><div class="small text-muted">卡方统计量</div><div class="fw-bold">' + (chi.chi2 || '-') + '</div></div>';
+                html += '<div class="col-md-3"><div class="small text-muted">自由度</div><div class="fw-bold">' + (chi.df || '-') + '</div></div>';
+                html += '<div class="col-md-3"><div class="small text-muted">p 值</div><div class="fw-bold ' + (chi.is_significant ? 'text-danger' : 'text-success') + '">' + (chi.p_value || '-') + '</div></div>';
+                html += '<div class="col-md-3"><div class="small text-muted">结论</div><div class="fw-bold">' + (chi.is_significant ? '⚠️ 显著' : '✅ 不显著') + '</div></div>';
+                html += '</div><p class="small text-muted mt-2">' + (chi.verdict || '') + '</p></div></div>';
+
+                // 游程检验
+                var runs = data.runs_test || {};
+                html += '<div class="card mb-3"><div class="card-header ' +
+                    (runs.is_significant ? 'bg-warning bg-opacity-25' : 'bg-success bg-opacity-10') +
+                    '"><strong>② 游程检验 (Runs Test)</strong> — H₀：号码出现顺序无趋势/周期</div>';
+                html += '<div class="card-body"><div class="row">';
+                html += '<div class="col-md-2"><div class="small text-muted">游程数</div><div class="fw-bold">' + (runs.n_runs || '-') + '</div></div>';
+                html += '<div class="col-md-2"><div class="small text-muted">期望游程</div><div class="fw-bold">' + (runs.expected_runs || '-') + '</div></div>';
+                html += '<div class="col-md-2"><div class="small text-muted">z 值</div><div class="fw-bold">' + (runs.z || '-') + '</div></div>';
+                html += '<div class="col-md-2"><div class="small text-muted">p 值</div><div class="fw-bold ' + (runs.is_significant ? 'text-danger' : 'text-success') + '">' + (runs.p_value || '-') + '</div></div>';
+                html += '<div class="col-md-4"><div class="small text-muted">结论</div><div class="fw-bold">' + (runs.is_significant ? '⚠️ 有模式' : '✅ 随机') + '</div></div>';
+                html += '</div><p class="small text-muted mt-2">' + (runs.verdict || '') + '</p></div></div>';
+
+                // 频率平衡
+                var bal = data.frequency_balance || {};
+                html += '<div class="card mb-3"><div class="card-header bg-light"><strong>③ 频率平衡分析</strong></div>';
+                html += '<div class="card-body"><div class="row">';
+                html += '<div class="col-md-3"><div class="small text-muted">最大偏差号码</div><div class="fw-bold">' + (bal.max_deviation_num || '-') + '号</div></div>';
+                html += '<div class="col-md-3"><div class="small text-muted">最大偏差</div><div class="fw-bold ' + (Math.abs(bal.max_deviation_pct || 0) > 20 ? 'text-warning' : '') + '">' + (bal.max_deviation_pct || 0) + '% (' + (bal.max_deviation_direction || '') + ')</div></div>';
+                html += '<div class="col-md-3"><div class="small text-muted">实际最低频</div><div class="fw-bold">' + (bal.min_freq || 0) + '次</div></div>';
+                html += '<div class="col-md-3"><div class="small text-muted">实际最高频</div><div class="fw-bold">' + (bal.max_freq || 0) + '次</div></div>';
+                html += '</div></div></div>';
+
+                // 频率分布柱状图
+                html += '<div class="card mb-3"><div class="card-header bg-light"><strong>④ 号码频率分布</strong></div>';
+                html += '<div class="card-body"><canvas id="freqChart" height="250"></canvas></div></div>';
+
+                area.innerHTML = html;
+
+                // 加载 Chart.js 画频率分布图
+                if (typeof Chart === 'undefined') {
+                    var script = document.createElement('script');
+                    script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+                    script.onload = function() { drawFreqChart(data); };
+                    document.head.appendChild(script);
+                } else {
+                    drawFreqChart(data);
+                }
+            })
+            .catch(function(err) {
+                area.innerHTML = '<div class="alert alert-danger">网络错误: ' + err + '</div>';
+            })
+            .finally(function() {
+                btn.disabled = false;
+                btn.textContent = '▶ 运行检测';
+            });
+    });
+
+    function drawFreqChart(data) {
+        // 先获取该玩法的统计数据进行频率绘图
+        var game = sel.value;
+        fetch('/api/stats/' + game)
+            .then(function(r) { return r.json(); })
+            .then(function(stats) {
+                var chartData = [];
+                var labels = [];
+                if (stats.front) {
+                    stats.front.forEach(function(s) {
+                        labels.push(s.number);
+                        chartData.push(s.freq * 100);
+                    });
+                }
+                var ctx = document.getElementById('freqChart');
+                if (!ctx) return;
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: '出现频率 (%)',
+                            data: chartData,
+                            backgroundColor: chartData.map(function(v) {
+                                var expected = 100 / labels.length;
+                                return v > expected * 1.3 ? '#dc354580' :
+                                       v < expected * 0.7 ? '#0d6efd80' : '#6c757d80';
+                            }),
+                            borderColor: chartData.map(function(v) {
+                                var expected = 100 / labels.length;
+                                return v > expected * 1.3 ? '#dc3545' :
+                                       v < expected * 0.7 ? '#0d6efd' : '#6c757d';
+                            }),
+                            borderWidth: 1,
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        scales: {
+                            y: { beginAtZero: true, title: { display: true, text: '频率 (%)' } },
+                            x: { title: { display: true, text: '号码' } }
+                        },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    afterLabel: function(ctx) {
+                                        var expected = (100 / labels.length).toFixed(2);
+                                        var diff = (ctx.raw - parseFloat(expected)).toFixed(2);
+                                        return '期望: ' + expected + '% | 偏差: ' + (diff > 0 ? '+' : '') + diff + '%';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            })
+            .catch(function() {
+                document.getElementById('freqChart').parentElement.innerHTML =
+                    '<div class="text-muted text-center py-3">无法加载频率数据</div>';
+            });
+    }
+})();
+</script>
+{% endblock %}

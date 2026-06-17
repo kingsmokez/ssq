@@ -216,6 +216,171 @@ def recommend_budget(game: str, budget: int) -> BudgetPlan:
     return BudgetPlan(budget=budget, game=game, recommended=best, alternatives=alts)
 
 
+# ---------------- 贪心集合覆盖优化 ----------------
+
+@dataclass
+class GreedyCoverPlan:
+    """贪心集合覆盖的结果。"""
+    selected_tickets: List[List[int]]   # 选中的号码组合
+    total_bets: int                     # 总注数
+    total_cost: int                     # 总成本
+    covered_numbers: set                # 覆盖的所有不同号码
+    coverage_rate: float                # 覆盖的号码占总号池比例
+    redundancy: float                   # 冗余率（号码在多个注中重复出现的平均次数）
+
+
+def _greedy_set_cover_lotto(pool: List[int], pick: int, n_tickets: int,
+                            unit_price: int = 2) -> GreedyCoverPlan:
+    """用贪心集合覆盖算法选择 n_tickets 注大乐透前区号码。
+
+    目标：在有限的注数下，最大化覆盖的不同号码数量。
+    策略：每轮选一个"包含最多未覆盖号码"的组合。
+
+    pool: 可选号池（如前区 1-35）
+    pick: 每注选几个号（5）
+    n_tickets: 选多少注
+    """
+    from itertools import combinations
+    import random as rnd
+
+    all_numbers = set(pool)
+    covered = set()
+    selected = []
+
+    # 预生成所有候选组合（太多时用采样替代）
+    all_combos = list(combinations(pool, pick))
+    if len(all_combos) > 50000:
+        # 号池太大时，用随机采样 + 贪心
+        # 每次从随机组合中选最优
+        for _ in range(n_tickets):
+            best_combo = None
+            best_new = -1
+            for _ in range(min(5000, len(all_combos))):
+                combo = tuple(sorted(rnd.sample(pool, pick)))
+                new_count = len(set(combo) - covered)
+                if new_count > best_new:
+                    best_new = new_count
+                    best_combo = combo
+                if best_new == pick:  # 全是新号，不可能更好
+                    break
+            if best_combo is None:
+                best_combo = tuple(sorted(rnd.sample(pool, pick)))
+            selected.append(list(best_combo))
+            covered.update(best_combo)
+    else:
+        remaining = set(all_combos)
+        for _ in range(n_tickets):
+            best_combo = None
+            best_new = -1
+            for combo in remaining:
+                new_count = len(set(combo) - covered)
+                if new_count > best_new:
+                    best_new = new_count
+                    best_combo = combo
+                    if best_new == pick:
+                        break
+            if best_combo is None:
+                # 都用完了，从全集中随机
+                best_combo = rnd.choice(all_combos)
+            selected.append(list(best_combo))
+            covered.update(best_combo)
+
+    # 计算冗余率
+    from collections import Counter
+    num_counter = Counter()
+    for ticket in selected:
+        for n in ticket:
+            num_counter[n] += 1
+    redundancy = sum(num_counter.values()) / len(num_counter) if num_counter else 1
+
+    return GreedyCoverPlan(
+        selected_tickets=selected,
+        total_bets=n_tickets,
+        total_cost=n_tickets * unit_price,
+        covered_numbers=covered,
+        coverage_rate=len(covered) / len(pool),
+        redundancy=round(redundancy, 2),
+    )
+
+
+def greedy_cover_lotto_front(front_pool_size: int = 35, front_pick: int = 5,
+                              n_tickets: int = 12, unit_price: int = 2) -> GreedyCoverPlan:
+    """大乐透前区贪心覆盖。"""
+    pool = list(range(1, front_pool_size + 1))
+    return _greedy_set_cover_lotto(pool, front_pick, n_tickets, unit_price)
+
+
+def greedy_cover_report(game: str, max_budget: int = 200) -> dict:
+    """为某玩法生成贪心覆盖优化报告。
+
+    枚举不同的注数，展示覆盖率和冗余率的权衡。
+    """
+    cfg = GAMES[game]
+    unit = BET_UNIT_PRICE.get(game, 2)
+    plans = []
+
+    if cfg["type"] == "lotto":
+        pool = cfg["front_pool"]
+        pick = cfg["front_pick"]
+        max_tickets = max_budget // unit
+        for n in [1, 2, 3, 5, 10, 15, 20, 30, 50, 100]:
+            if n > max_tickets:
+                continue
+            plan = _greedy_set_cover_lotto(pool, pick, n, unit)
+            plans.append({
+                "n_tickets": n,
+                "total_cost": plan.total_cost,
+                "covered_numbers": sorted(plan.covered_numbers),
+                "coverage_rate": round(plan.coverage_rate, 3),
+                "redundancy": plan.redundancy,
+            })
+    else:
+        # digit 玩法：每位贪心覆盖
+        positions = cfg["positions"]
+        max_tickets = max_budget // unit
+        for n in [1, 2, 3, 5, 10, 15, 20, 30]:
+            if n > max_tickets:
+                continue
+            # 每位独立贪心：每位选 n 个数字，使覆盖的数字最大化（0-9）
+            covered_positions = []
+            for pos in range(positions):
+                pool = list(range(10))
+                plan = _greedy_set_cover_lotto(pool, 1, min(n, 10), unit)
+                covered_positions.append(sorted(plan.covered_numbers))
+            # 总覆盖 = 所有位覆盖的并集
+            all_covered = set()
+            for cp in covered_positions:
+                all_covered.update(cp)
+            plans.append({
+                "n_tickets": n,
+                "total_cost": n * unit,
+                "covered_per_position": covered_positions,
+                "total_unique_digits": len(all_covered),
+                "coverage_rate": round(len(all_covered) / (positions * 10), 3),
+                "redundancy": 1.0,
+            })
+
+    return {
+        "game": game,
+        "max_budget": max_budget,
+        "plans": plans,
+        "recommendation": _pick_best_cover_plan(plans, max_budget),
+    }
+
+
+def _pick_best_cover_plan(plans: List[dict], max_budget: int) -> dict:
+    """选最佳覆盖方案：在预算内选覆盖率最高且冗余度适中的。"""
+    if not plans:
+        return {}
+    # 在预算内优先选覆盖率高的，覆盖率相同时选注数少的
+    valid = [p for p in plans if p["total_cost"] <= max_budget]
+    if not valid:
+        return plans[0]
+    # 按覆盖率降序，冗余度升序
+    valid.sort(key=lambda x: (-x["coverage_rate"], x.get("redundancy", 0)))
+    return valid[0]
+
+
 # ---------------- 资金管理 ----------------
 
 # 体彩合理投注的参考阈值（元/月）。超过即触发提醒。
